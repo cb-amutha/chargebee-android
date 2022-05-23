@@ -1,5 +1,6 @@
 package com.chargebee.example.billing
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -18,6 +19,7 @@ class BillingViewModel : ViewModel() {
 
     private val TAG = "BillingViewModel"
     var productPurchaseResult: MutableLiveData<Boolean> = MutableLiveData()
+    var updateProductPurchaseResult: MutableLiveData<String> = MutableLiveData()
     var cbException: MutableLiveData<String?> = MutableLiveData()
     var subscriptionStatus: MutableLiveData<String?> = MutableLiveData()
     var subscriptionList: MutableLiveData<ArrayList<SubscriptionDetailsWrapper>?> = MutableLiveData()
@@ -82,4 +84,31 @@ class BillingViewModel : ViewModel() {
             }
         }
     }
+
+    fun updatePurchase(productIdList: ArrayList<String>, oldPurchaseToken: String, context: Context){
+        CBPurchase.retrieveSkuProducts(
+            context,
+            productIdList,oldPurchaseToken,
+            object : CBCallback.ListProductsCallback<ArrayList<CBProduct>> {
+
+                override fun onSuccess(productIDs: ArrayList<CBProduct>) {
+                    //Log.i(TAG, "productIDs :$productIDs")
+                    val purchaseToken = productIDs.get(0).productId
+                    Log.i(TAG, "purchaseToken :$purchaseToken")
+                    updateProductPurchaseResult.postValue(purchaseToken)
+
+                }
+                override fun onError(error: CBException) {
+                    Log.e(javaClass.simpleName, "Error:  ${error.message}")
+                    // showDialog(error.message)
+                    try {
+                        cbException.postValue(error.message)
+                    }catch (exp: Exception){
+                        Log.i(TAG, "Exception :${exp.message}")
+                    }
+                }
+
+            })
+    }
+
 }

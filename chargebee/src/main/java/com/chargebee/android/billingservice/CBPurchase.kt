@@ -45,6 +45,16 @@ object CBPurchase {
             callBack.onError(ex)
         }
     }
+    @JvmStatic
+    fun retrieveSkuProducts(context: Context, params: ArrayList<String>,oldPurchaseToken:String, callBack :CBCallback.ListProductsCallback<ArrayList<CBProduct>> ) {
+        try {
+            billingClientManager = BillingClientManager(context,SkuType.SUBS, params, callBack)
+            billingClientManager!!.oldPurchaseToken = oldPurchaseToken;
+        }catch (ex: CBException){
+            callBack.onError(ex)
+        }
+    }
+
     /* Buy the product with/without customer Id */
     @JvmStatic
     fun purchaseProduct(

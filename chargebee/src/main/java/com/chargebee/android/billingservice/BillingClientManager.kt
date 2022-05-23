@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.text.TextUtils
 import android.util.Log
 import com.android.billingclient.api.*
 import com.chargebee.android.ErrorDetail
@@ -31,8 +32,14 @@ class BillingClientManager constructor(
     private val TAG = "BillingClientManager"
     var customerID : String = ""
     var product: CBProduct? = null
-   companion object {
+    var oldPurchaseToken: String? = null
+
+    lateinit var newSkuDetails: SkuDetails
+
+
+    companion object {
        lateinit var mProgressBarListener: Any
+
    }
 
     var mProgressBarListener: ProgressBarListener? = null
@@ -45,7 +52,6 @@ class BillingClientManager constructor(
         startBillingServiceConnection()
 
     }
-
     /* Called to notify that the connection to the billing service was lost*/
     override fun onBillingServiceDisconnected() {
         connectToBillingService()
@@ -59,6 +65,16 @@ class BillingClientManager constructor(
                     TAG,
                     "onBillingSetupFinished() -> successfully for ${billingClient.toString()}."
                 )
+                Log.i(
+                    TAG,
+                    "Purchase Token : $oldPurchaseToken"
+                )
+                if(!TextUtils.isEmpty(oldPurchaseToken) && oldPurchaseToken !=null){
+                    Log.i(TAG, "update purchase started.......")
+                    callBack?.let { getNewSkuDetails(BillingClient.SkuType.SUBS, skuList, it) }
+                }else{
+                    callBack?.let { loadProductDetails(BillingClient.SkuType.SUBS, skuList, it) }
+                }
                 callBack?.let { loadProductDetails(BillingClient.SkuType.SUBS, skuList, it) }
             }
             BillingClient.BillingResponseCode.FEATURE_NOT_SUPPORTED,
@@ -113,19 +129,102 @@ class BillingClientManager constructor(
         }
     }
 
+//    private fun queryProductDetails(skuList: ArrayList<String>) {
+//        val params = QueryProductDetailsParams.newBuilder()
+//        val productList = mutableListOf<QueryProductDetailsParams.Product>()
+//        for (product in skuList) {
+//
+//            productList.add(
+//                QueryProductDetailsParams.Product.newBuilder()
+//                    .setProductId(product)
+//                    .setProductType(BillingClient.ProductType.SUBS)
+//                    .build()
+//            )
+//
+//            params.setProductList(productList).let { productDetailsParams ->
+//                Log.i(TAG, "queryProductDetailsAsync")
+//                billingClient.queryProductDetailsAsync(productDetailsParams.build()){ billingResult: BillingResult,
+//                                                                                      productDetailsList: MutableList<ProductDetails> ->
+//
+//                    val responseCode = billingResult.responseCode
+//                    val debugMessage = billingResult.debugMessage
+//                    when (responseCode) {
+//                        BillingClient.BillingResponseCode.OK -> {
+//                            var newMap = emptyMap<String, ProductDetails>()
+//                            if (productDetailsList.isNullOrEmpty()) {
+//                                Log.e(
+//                                    TAG,
+//                                    "onProductDetailsResponse: " +
+//                                            "Found null or empty ProductDetails. " +
+//                                            "Check to see if the Products you requested are correctly " +
+//                                            "published in the Google Play Console."
+//                                )
+//                            } else {
+//                                newMap = productDetailsList.associateBy {
+//                                    it.productId
+//                                }
+//
+//                                skusWithSkuDetails.clear()
+//                                for (skuProduct in productDetailsList) {
+//                                    skuProduct.
+//                                }
+//                                    val product = CBProduct(
+//                                        skuProduct.sku,
+//                                        skuProduct.title,
+//                                        skuProduct.price,
+//                                        skuProduct,
+//                                        false
+//                                    )
+//                                    skusWithSkuDetails.add(product)
+//                                }
+//                            }
+//
+//                        }
+//
+//                        if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && skuDetailsList != null) {
+//                        try {
+//                            skusWithSkuDetails.clear()
+//                            for (skuProduct in skuDetailsList) {
+//                                val product = CBProduct(
+//                                    skuProduct.sku,
+//                                    skuProduct.title,
+//                                    skuProduct.price,
+//                                    skuProduct,
+//                                    false
+//                                )
+//                                skusWithSkuDetails.add(product)
+//                            }
+//                            Log.i(TAG, "Product details :$skusWithSkuDetails")
+//                            callBack.onSuccess(productIDs = skusWithSkuDetails)
+//                        }catch (ex: CBException){
+//                            callBack.onError(CBException(ErrorDetail("Unknown error")))
+//                            Log.e(TAG, "exception :" + ex.message)
+//                        }
+//                    }else{
+//                        Log.e(TAG, "Response Code :" + billingResult.responseCode)
+//                        callBack.onError(CBException(ErrorDetail("Service Unavailable")))
+//                    }
+//                        else -> {
+//                            Log.i(TAG, "onProductDetailsResponse: $responseCode $debugMessage")
+//                        }
+//
+//                    }
+//            }
+//        }
+//    }
+
     /* Get the SKU/Products from Play Console */
     private fun loadProductDetails(
         @BillingClient.SkuType skuType: String,
         skuList: ArrayList<String>, callBack: CBCallback.ListProductsCallback<ArrayList<CBProduct>>
     ) {
        try {
+           //queryProductDetails(skuList)
            val params = SkuDetailsParams
                .newBuilder()
                .setSkusList(skuList)
                .setType(skuType)
                .build()
-
-           queryAllPurchases()
 
            billingClient.querySkuDetailsAsync(
                params
@@ -217,7 +316,12 @@ class BillingClientManager constructor(
                 purchases?.forEach { purchase ->
                     when (purchase.purchaseState) {
                         Purchase.PurchaseState.PURCHASED -> {
-                            acknowledgePurchase(purchase)
+                            Log.i(TAG, "old purchase token :$oldPurchaseToken")
+                            if(!TextUtils.isEmpty(oldPurchaseToken) && oldPurchaseToken !=null){
+                                acknowledgeUpdatePurchase(purchase)
+                            }else {
+                                acknowledgePurchase(purchase)
+                            }
                         }
                         Purchase.PurchaseState.PENDING -> {
                             purchaseCallBack?.onError(CBException(ErrorDetail("Your purchase is pending state, you need to complete it from store")))
@@ -262,7 +366,52 @@ class BillingClientManager constructor(
                             mProgressBarListener?.onHideProgressBar()
                         }else {
                             Log.i(TAG, "Google Purchase - success")
+                            Log.i(TAG, "Purchase Token :${purchase.purchaseToken}")
                             product?.let { validateReceipt(purchase.purchaseToken, it) }
+                        }
+
+                    } catch (ex: CBException) {
+                        mProgressBarListener?.onHideProgressBar()
+                        Log.e("Error", ex.toString())
+                        purchaseCallBack?.onError(ex)
+                    }
+                }
+            }
+        }
+
+    }
+
+    /* Acknowledge the Purchases */
+    private fun acknowledgeUpdatePurchase(purchase: Purchase) {
+        if (!purchase.isAcknowledged) {
+            val params = AcknowledgePurchaseParams.newBuilder()
+                .setPurchaseToken(purchase.purchaseToken)
+                .build()
+            billingClient.acknowledgePurchase(params) { billingResult ->
+                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                    mProgressBarListener?.onShowProgressBar()
+                    try {
+                        if (purchase.purchaseToken.isEmpty()){
+                            Log.i(TAG, "Receipt Not Found")
+                            mProgressBarListener?.onHideProgressBar()
+                        }else {
+                            Log.i(TAG, "Google Purchase - success")
+                            Log.i(TAG, "Purchase Token :${purchase.purchaseToken}")
+                            //product?.let { validateReceipt(purchase.purchaseToken, it) }
+
+                            val product = CBProduct(
+                                purchase.purchaseToken,
+                                        purchase.purchaseToken,
+                                purchase.purchaseToken,
+                                newSkuDetails,
+                                false
+                            )
+                            skusWithSkuDetails.clear()
+                            skusWithSkuDetails.add(product)
+
+                            oldPurchaseToken = null
+                           // Log.i(TAG, "skusWithSkuDetails :$skusWithSkuDetails")
+                            callBack?.onSuccess(skusWithSkuDetails)
                         }
 
                     } catch (ex: CBException) {
@@ -328,6 +477,80 @@ class BillingClientManager constructor(
                     "queryPurchaseHistory  :${billingResult.debugMessage}"
                 )
             }
+        }
+    }
+
+    private fun getNewSkuDetails(
+        @BillingClient.SkuType skuType: String,
+        skuList: ArrayList<String>, callBack: CBCallback.ListProductsCallback<ArrayList<CBProduct>>
+    ) {
+        try {
+            val params = SkuDetailsParams
+                .newBuilder()
+                .setSkusList(skuList)
+                .setType(skuType)
+                .build()
+
+            billingClient.querySkuDetailsAsync(
+                params
+            ) { billingResult, skuDetailsList ->
+                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && skuDetailsList != null) {
+                    try {
+                        skusWithSkuDetails.clear()
+                        val skuDetails = skuDetailsList.get(0)
+                        Log.i(TAG, "skuDetails :$skuDetails")
+                        this.newSkuDetails = skuDetails;
+                        updatePurchaseFlow(skuDetails)
+                        // callBack.onSuccess(productIDs = skusWithSkuDetails)
+                    }catch (ex: CBException){
+                        callBack.onError(CBException(ErrorDetail("Unknown error")))
+                        Log.e(TAG, "exception :" + ex.message)
+                    }
+                }else{
+                    Log.e(TAG, "Response Code :" + billingResult.responseCode)
+                    callBack.onError(CBException(ErrorDetail("Service Unavailable")))
+                }
+            }
+        }catch (exp: CBException){
+            Log.e(TAG, "exception :$exp.message")
+            callBack.onError(CBException(ErrorDetail("failed")))
+        }
+
+    }
+    private fun updatePurchaseFlow(skuDetails: SkuDetails) {
+        Log.i(TAG, "oldPurchaseToken : $oldPurchaseToken")
+
+        val updateParams = oldPurchaseToken?.let {
+            BillingFlowParams.SubscriptionUpdateParams.newBuilder()
+                .setOldSkuPurchaseToken(it.trim())
+                .setReplaceSkusProrationMode(BillingFlowParams.ProrationMode.IMMEDIATE_WITH_TIME_PRORATION)
+                .build()
+        }
+
+        val billingFlowParams = updateParams?.let {
+            BillingFlowParams.newBuilder()
+                .setSkuDetails(skuDetails)
+                .setSubscriptionUpdateParams(it)
+                .build()
+        }
+
+//        val priceChangeParams = PriceChangeFlowParams.newBuilder()
+//            .setSkuDetails(skuDetails)
+//            .build()
+//        billingClient.launchPriceChangeConfirmationFlow(mContext as Activity, priceChangeParams) {
+//                billingResult ->
+//            if(billingResult.responseCode == BillingClient.BillingResponseCode.OK){
+//                Log.i(TAG, "Price change ")
+//            }
+//        }
+
+        // billingClient.launchBillingFlow(mContext as Activity, billingFlowParams)
+        if (billingFlowParams != null) {
+            billingClient.launchBillingFlow(mContext as Activity, billingFlowParams)
+                .takeIf { billingResult -> billingResult.responseCode != BillingClient.BillingResponseCode.OK
+                }?.let { billingResult ->
+                    Log.e(TAG, "Failed to launch billing flow $billingResult")
+                }
         }
     }
 }
