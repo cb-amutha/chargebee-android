@@ -197,7 +197,7 @@ class MainActivity : BaseActivity(), ListItemsAdapter.ItemClickListener {
                         if (productIDs.size > 0) {
                                 launchProductDetailsScreen(gson.toJson(productIDs))
                         } else {
-                            alertSuccess("Items not available to buy or Please keep one plan for one subscriptions!")
+                            alertSuccess("Items not available to buy or Please have one base plan for the subscriptions!")
                         }
                     }
                 }
