@@ -135,7 +135,7 @@ class BillingClientManager constructor(
                         skusWithSkuDetails.clear()
                         for (skuProduct in productDetailsList) {
 
-                            if (skuProduct.subscriptionOfferDetails?.first()?.pricingPhases?.pricingPhaseList?.size!! == 1){
+                            if (skuProduct.subscriptionOfferDetails?.size!! == 1){
                                 val price = skuProduct.subscriptionOfferDetails?.first()?.pricingPhases?.pricingPhaseList?.get(0)?.formattedPrice
                                 if (price !=null && price.isNotEmpty()) {
                                     val product = CBProduct(
@@ -147,11 +147,10 @@ class BillingClientManager constructor(
                                     )
                                     skusWithSkuDetails.add(product)
                                 }else{
-                                    callBack.onError(CBException(ErrorDetail("Base plan price is empty")))
+                                    Log.i(TAG, "Base plan price is empty" )
                                 }
                             }else{
                                 Log.i(TAG, "Please keep one plan for one subscriptions!" )
-                                callBack.onError(CBException(ErrorDetail("Please keep one plan for one subscriptions!")))
                             }
                         }
                         Log.i(TAG, "Product details :$skusWithSkuDetails")
@@ -294,7 +293,7 @@ class BillingClientManager constructor(
                         }else {
                             Log.i(TAG, "Google Purchase - success")
                             Log.i(TAG, "Purchase Token -${purchase.purchaseToken}")
-                            validateReceipt(purchase.purchaseToken, product)
+                            validateReceipt(purchase.purchaseToken.trim(), product)
                         }
 
                     } catch (ex: CBException) {
