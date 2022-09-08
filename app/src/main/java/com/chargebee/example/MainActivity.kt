@@ -124,6 +124,9 @@ class MainActivity : BaseActivity(), ListItemsAdapter.ItemClickListener {
                 val intent = Intent(this, SubscriptionActivity::class.java)
                 startActivity(intent)
             }
+            CBMenu.WebCheckout.value -> {
+                //TODO
+            }
             else ->{
                 Log.i(javaClass.simpleName, " Not implemented" )
             }
