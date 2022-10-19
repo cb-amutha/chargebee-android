@@ -73,6 +73,19 @@ public class BaseActivity extends AppCompatActivity {
                 }).show();
     }
 
+    public void alertNativeCheckoutSuccess(String status) {
+        new AlertDialog.Builder(this)
+                .setIcon(android.R.drawable.ic_dialog_info)
+                .setTitle("Chargebee")
+                .setMessage(status)
+                .setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialogInterface, int i) {
+                        finish();
+                    }
+                }).show();
+    }
+
     protected void showDialog(String msg){
         final Dialog dialog = new Dialog(this);
         dialog.setContentView(R.layout.dialog_layout);

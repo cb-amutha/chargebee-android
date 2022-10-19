@@ -13,6 +13,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+        <activity
+            android:name=".webcheckout.WebCheckoutActivity"
+            android:exported="false" />
         <activity android:name="com.chargebee.example.addon.AddonActivity" />
         <activity android:name="com.chargebee.example.token.TokenizeActivity" />
         <activity android:name="com.chargebee.example.plan.PlanInJavaActivity">

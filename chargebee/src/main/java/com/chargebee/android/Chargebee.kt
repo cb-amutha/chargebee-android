@@ -24,6 +24,7 @@ object Chargebee {
     var encodedApiKey: String = ""
     var sdkKey: String = ""
     var baseUrl: String = ""
+    var checkoutUrl: String = "https://sleepnumbertest-test.chargebee.com/hosted_pages/checkout?"
     var allowErrorLogging: Boolean = true
     var version: String = CatalogVersion.Unknown.value
     var applicationId: String = ""
@@ -39,6 +40,7 @@ object Chargebee {
         this.site = site
         this.encodedApiKey = Credentials.basic(publishableApiKey, "")
         this.baseUrl = "https://${site}.chargebee.com/api/"
+        this.checkoutUrl = "https://sleepnumbertest-test.chargebee.com/hosted_pages/checkout?"
         this.allowErrorLogging = allowErrorLogging
         this.sdkKey = sdkKey
         val auth = Auth(sdkKey,applicationId,appName, channel)

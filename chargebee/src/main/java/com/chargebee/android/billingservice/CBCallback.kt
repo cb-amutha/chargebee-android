@@ -16,5 +16,10 @@ interface CBCallback {
         fun onSuccess(subscriptionID: String, status: Boolean)
         fun onError(error: CBException)
     }
+    interface CheckoutCallback<T> {
+        fun onCompleted(status: Boolean)
+        fun onFailed(error: CBException)
+        fun onCanceled(error: CBException)
+    }
 
 }

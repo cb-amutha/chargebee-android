@@ -31,6 +31,7 @@ import com.chargebee.example.subscription.SubscriptionActivity
 import com.chargebee.example.token.TokenizeActivity
 import com.chargebee.example.util.CBMenu
 import com.chargebee.example.util.Constants.PRODUCTS_LIST_KEY
+import com.chargebee.example.webcheckout.WebCheckoutActivity
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -125,7 +126,9 @@ class MainActivity : BaseActivity(), ListItemsAdapter.ItemClickListener {
                 startActivity(intent)
             }
             CBMenu.WebCheckout.value -> {
-                //TODO
+                val intent = Intent(this, WebCheckoutActivity::class.java)
+                startActivity(intent)
+
             }
             else ->{
                 Log.i(javaClass.simpleName, " Not implemented" )
