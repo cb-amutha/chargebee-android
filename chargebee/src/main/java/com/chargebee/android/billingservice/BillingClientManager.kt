@@ -32,7 +32,7 @@ class BillingClientManager constructor(
     private val TAG = "BillingClientManager"
     var customerID : String = "null"
     lateinit var product: CBProduct
-    lateinit var offerToken: String
+    private var offerToken: String? = null
 
     init {
         mContext = context
@@ -56,7 +56,7 @@ class BillingClientManager constructor(
                     TAG,
                     "onBillingSetupFinished() -> successfully for ${billingClient.toString()}."
                 )
-                queryProductDetailsFromGooglePlay()
+               // queryProductDetailsFromGooglePlay()
             }
             BillingClient.BillingResponseCode.FEATURE_NOT_SUPPORTED,
             BillingClient.BillingResponseCode.BILLING_UNAVAILABLE -> {
@@ -125,7 +125,7 @@ class BillingClientManager constructor(
     }
 
     /* Get the Product Details from Play Console */
-    private fun queryProductDetailsFromGooglePlay() {
+    fun queryProductDetailsFromGooglePlay() {
         try {
             val productDetailsParams = buildQueryProductDetailsParams()
             billingClient.queryProductDetailsAsync(productDetailsParams){
@@ -134,23 +134,32 @@ class BillingClientManager constructor(
                     try {
                         skusWithSkuDetails.clear()
                         for (skuProduct in productDetailsList) {
-
-                            if (skuProduct.subscriptionOfferDetails?.size!! == 1){
-                                val price = skuProduct.subscriptionOfferDetails?.first()?.pricingPhases?.pricingPhaseList?.get(0)?.formattedPrice
-                                if (price !=null && price.isNotEmpty()) {
-                                    val product = CBProduct(
-                                        skuProduct.productId,
-                                        skuProduct.title,
-                                        price,
-                                        skuProduct,
-                                        false
-                                    )
-                                    skusWithSkuDetails.add(product)
+                            val length = skuProduct.subscriptionOfferDetails?.size!!-1
+                            Log.i(TAG, "length $length" )
+                            for (i in 0..length){
+                                val priceSize = skuProduct.subscriptionOfferDetails?.get(i)?.pricingPhases?.pricingPhaseList?.size
+                                if (priceSize == 1) {
+                                    val price = skuProduct.subscriptionOfferDetails?.get(i)?.pricingPhases?.pricingPhaseList?.first()?.formattedPrice
+                                    offerToken = skuProduct.subscriptionOfferDetails?.get(i)?.offerToken
+                                    //if (price !=null && price.isNotEmpty()) {
+                                        val product = price?.let {
+                                            CBProduct(
+                                                skuProduct.productId,
+                                                skuProduct.title,
+                                                it,
+                                                skuProduct,
+                                                false,
+                                                offerToken
+                                            )
+                                        }
+                                    if (product != null) {
+                                        skusWithSkuDetails.add(product)
+                                    }
+                                   // }
                                 }else{
                                     Log.i(TAG, "Base plan price is empty" )
                                 }
-                            }else{
-                                Log.i(TAG, "Please keep one plan for one subscriptions!" )
+
                             }
                         }
                         Log.i(TAG, "Product details :$skusWithSkuDetails")
@@ -179,25 +188,32 @@ class BillingClientManager constructor(
     ) {
         this.purchaseCallBack = purchaseCallBack
         this.product = product
-        try {
-            if (product.productDetails.subscriptionOfferDetails != null && product.productDetails.subscriptionOfferDetails!!.size > 0) {
-                val offerDetails: LinkedTreeMap<String, String> = product.productDetails.subscriptionOfferDetails!![0] as LinkedTreeMap<String, String>
-                offerToken = offerDetails.get("offerToken") as String
-            }
-        }catch (e: Exception){
-            Log.i(TAG, "Exception : ${e.stackTrace} ")
-            purchaseCallBack.onError(CBException(ErrorDetail(GPErrorCode.UnknownError.errorMsg)))
-        }
+//        try {
+//            if (product.productDetails.subscriptionOfferDetails != null && product.productDetails.subscriptionOfferDetails!!.size > 0) {
+//                val offerDetails: LinkedTreeMap<String, String> = product.productDetails.subscriptionOfferDetails!![0] as LinkedTreeMap<String, String>
+//                offerToken = offerDetails.get("offerToken") as String
+//            }
+//        }catch (e: Exception){
+//            Log.i(TAG, "Exception : ${e.stackTrace} ")
+//            purchaseCallBack.onError(CBException(ErrorDetail(GPErrorCode.UnknownError.errorMsg)))
+//        }
+
 
         if (!(TextUtils.isEmpty(customerID))) {
             this.customerID = customerID
         }
+        offerToken = product.offerToken
+
+        Log.i(TAG, "offerToken : ${product.productDetails} ")
+
 
         val productDetailsParamsList = listOf(
-            BillingFlowParams.ProductDetailsParams.newBuilder()
-                .setProductDetails(product.productDetails)
-                .setOfferToken(offerToken)
-                .build()
+            offerToken?.let {
+                BillingFlowParams.ProductDetailsParams.newBuilder()
+                    .setProductDetails(product.productDetails)
+                    .setOfferToken(it)
+                    .build()
+            }
         )
 
         val billingFlowParams = BillingFlowParams.newBuilder()
