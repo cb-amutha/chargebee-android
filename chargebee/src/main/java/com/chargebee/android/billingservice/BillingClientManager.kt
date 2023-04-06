@@ -13,6 +13,7 @@ import com.chargebee.android.exceptions.CBException
 import com.chargebee.android.exceptions.ChargebeeResult
 import com.chargebee.android.models.CBProduct
 import com.chargebee.android.network.CBReceiptResponse
+import com.google.gson.internal.LinkedTreeMap
 import java.util.*
 
 class BillingClientManager constructor(
@@ -31,6 +32,7 @@ class BillingClientManager constructor(
     private val skusWithSkuDetails = arrayListOf<CBProduct>()
     private val TAG = javaClass.simpleName
     lateinit var product: CBProduct
+    private var offerToken: String? = null
 
     init {
         mContext = context
@@ -54,7 +56,7 @@ class BillingClientManager constructor(
                     TAG,
                     "Google Billing Setup Done!"
                 )
-                loadProductDetails(BillingClient.SkuType.SUBS, skuList, callBack)
+               // queryProductDetailsFromGooglePlay()
             }
             BillingClient.BillingResponseCode.FEATURE_NOT_SUPPORTED,
             BillingClient.BillingResponseCode.BILLING_UNAVAILABLE -> {
@@ -107,6 +109,77 @@ class BillingClientManager constructor(
         }
     }
 
+    private fun buildQueryProductDetailsParams(): QueryProductDetailsParams {
+        val productList = mutableListOf<QueryProductDetailsParams.Product>()
+        for (product in skuList) {
+            productList.add(
+                QueryProductDetailsParams.Product.newBuilder()
+                    .setProductId(product)
+                    .setProductType(BillingClient.ProductType.SUBS)
+                    .build()
+            )
+        }
+        return QueryProductDetailsParams.newBuilder()
+            .setProductList(productList)
+            .build()
+    }
+
+    /* Get the Product Details from Play Console */
+    fun queryProductDetailsFromGooglePlay() {
+        try {
+            val productDetailsParams = buildQueryProductDetailsParams()
+            billingClient.queryProductDetailsAsync(productDetailsParams){
+                    billingResult, productDetailsList ->
+                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                    try {
+                        skusWithSkuDetails.clear()
+                        for (skuProduct in productDetailsList) {
+                            val length = skuProduct.subscriptionOfferDetails?.size!!-1
+                            Log.i(TAG, "length $length" )
+                            for (i in 0..length){
+                                val priceSize = skuProduct.subscriptionOfferDetails?.get(i)?.pricingPhases?.pricingPhaseList?.size
+                                if (priceSize == 1) {
+                                    val price = skuProduct.subscriptionOfferDetails?.get(i)?.pricingPhases?.pricingPhaseList?.first()?.formattedPrice
+                                    offerToken = skuProduct.subscriptionOfferDetails?.get(i)?.offerToken
+                                    //if (price !=null && price.isNotEmpty()) {
+                                    val product = price?.let {
+                                        CBProduct(
+                                            skuProduct.productId,
+                                            skuProduct.title,
+                                            it,
+                                            skuProduct,
+                                            false,
+                                            offerToken
+                                        )
+                                    }
+                                    if (product != null) {
+                                        skusWithSkuDetails.add(product)
+                                    }
+                                    // }
+                                }else{
+                                    Log.i(TAG, "Base plan price is empty" )
+                                }
+
+                            }
+                        }
+                        Log.i(TAG, "Product details :$skusWithSkuDetails")
+                        callBack.onSuccess(productIDs = skusWithSkuDetails)
+                    }catch (ex: CBException){
+                        Log.e(TAG, "exception :" + ex.message)
+                        callBack.onError(CBException(ErrorDetail(GPErrorCode.UnknownError.errorMsg)))
+                    }
+                }else{
+                    Log.e(TAG, "Response Code :" + billingResult.responseCode)
+                    callBack.onError(CBException(ErrorDetail("Service Unavailable")))
+                }
+
+            }
+        }catch (exp: Exception){
+            Log.e(TAG, "Exception in queryProductDetailsFromGooglePlay()  :${exp.message}")
+            callBack.onError(CBException(ErrorDetail("${exp.message}")))
+        }
+    }
+
     /* Get the SKU/Products from Play Console */
     private fun loadProductDetails(
         @BillingClient.SkuType skuType: String,
@@ -152,6 +225,54 @@ class BillingClientManager constructor(
        }
 
     }
+
+    /* Purchase the product: Initiates the billing flow for an In-app-purchase  */
+    fun purchase(
+        product: CBProduct,
+        customerID: String = "",
+        purchaseCallBack: CBCallback.PurchaseCallback<String>
+    ) {
+        this.purchaseCallBack = purchaseCallBack
+        this.product = product
+//        try {
+//            if (product.productDetails.subscriptionOfferDetails != null && product.productDetails.subscriptionOfferDetails!!.size > 0) {
+//                val offerDetails: LinkedTreeMap<String, String> = product.productDetails.subscriptionOfferDetails!![0] as LinkedTreeMap<String, String>
+//                offerToken = offerDetails.get("offerToken") as String
+//            }
+//        }catch (e: Exception){
+//            Log.i(TAG, "Exception : ${e.stackTrace} ")
+//            purchaseCallBack.onError(CBException(ErrorDetail(GPErrorCode.UnknownError.errorMsg)))
+//        }
+
+
+        if (!(TextUtils.isEmpty(customerID))) {
+            this.customerID = customerID
+        }
+        offerToken = product.offerToken
+
+        Log.i(TAG, "offerToken : ${product.productDetails} ")
+
+
+        val productDetailsParamsList = listOf(
+            offerToken?.let {
+                BillingFlowParams.ProductDetailsParams.newBuilder()
+                    .setProductDetails(product.productDetails)
+                    .setOfferToken(it)
+                    .build()
+            }
+        )
+
+        val billingFlowParams = BillingFlowParams.newBuilder()
+            .setProductDetailsParamsList(productDetailsParamsList).build()
+
+        billingClient.launchBillingFlow(mContext as Activity, billingFlowParams)
+            .takeIf { billingResult -> billingResult.responseCode != BillingClient.BillingResponseCode.OK
+            }?.let { billingResult ->
+                Log.e(TAG, "Failed to launch billing flow $billingResult")
+            }
+
+    }
+
 
     /* Purchase the product: Initiates the billing flow for an In-app-purchase  */
     fun purchase(
