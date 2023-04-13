@@ -33,7 +33,7 @@ public class ProductListAdapter extends RecyclerView.Adapter<ProductListAdapter.
     public void onBindViewHolder(ProductListAdapter.ViewHolder holder, int position) {
         CBProduct products = mProductsList.get(position);
         holder.mTextViewTitle.setText(products.getProductId());
-        holder.mTextViewPrice.setText(products.getProductPrice());
+        holder.mTextViewPrice.setText(products.getProductPrice().getFormatted());
         if (products.getSubStatus()) {
             holder.mTextViewSubscribe.setText(R.string.status_subscribed);
             holder.mTextViewSubscribe.setTextColor(mContext.getResources().getColor(R.color.success_green));

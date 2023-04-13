@@ -16,15 +16,14 @@ import com.chargebee.android.resources.ReceiptResource
 import java.util.ArrayList
 object CBPurchase {
 
-    var billingClientManager: BillingClientManager? = null
-    val productIdList = arrayListOf<String>()
+    @JvmSynthetic
+    internal var billingClientManager: BillingClientManager? = null
+    private val productIdList = arrayListOf<String>()
     private var customer : CBCustomer? = null
 
-    annotation class SkuType {
-        companion object {
-            var INAPP = "inapp"
-            var SUBS = "subs"
-        }
+    enum class ProductType(val value: String) {
+        SUBS("subs"),
+        INAPP("inapp")
     }
     /*
     * Get the product ID's from chargebee system
@@ -44,8 +43,9 @@ object CBPurchase {
             val connectionState = billingClientManager?.billingClient?.connectionState
             if (connectionState!=null && connectionState == BillingClient.ConnectionState.CONNECTED){
                 billingClientManager?.billingClient?.endConnection()
+                billingClientManager = null
             }
-            billingClientManager = BillingClientManager(context,SkuType.SUBS, params, callBack)
+            billingClientManager = BillingClientManager(context, params, callBack)
         }catch (ex: CBException){
             callBack.onError(ex)
         }
@@ -77,7 +77,7 @@ object CBPurchase {
                     is ChargebeeResult.Success -> {
                         if (billingClientManager?.isFeatureSupported() == true) {
                             if (billingClientManager?.isBillingClientReady() == true) {
-                                billingClientManager?.purchase(product, callback)
+                                billingClientManager?.purchase(product, "cusId", callback)
                             } else {
                                 callback.onError(CBException(ErrorDetail(GPErrorCode.BillingClientNotReady.errorMsg)))
                             }

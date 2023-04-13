@@ -12,20 +12,20 @@ import com.chargebee.android.ErrorDetail
 import com.chargebee.android.exceptions.CBException
 import com.chargebee.android.exceptions.ChargebeeResult
 import com.chargebee.android.models.CBProduct
+import com.chargebee.android.models.CBPurchaseParams
+import com.chargebee.android.models.toCBProducts
 import com.chargebee.android.network.CBReceiptResponse
-import com.google.gson.internal.LinkedTreeMap
 import java.util.*
 
 class BillingClientManager constructor(
-    context: Context, skuType: String,
+    context: Context,
     skuList: ArrayList<String>, callBack: CBCallback.ListProductsCallback<ArrayList<CBProduct>>
 ) : BillingClientStateListener, PurchasesUpdatedListener {
 
     private val CONNECT_TIMER_START_MILLISECONDS = 1L * 1000L
     lateinit var billingClient: BillingClient
-    var mContext : Context? = null
+    private var mContext : Context? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var skuType : String? = null
     private var skuList = arrayListOf<String>()
     private var callBack : CBCallback.ListProductsCallback<ArrayList<CBProduct>>
     private var purchaseCallBack: CBCallback.PurchaseCallback<String>? = null
@@ -33,14 +33,13 @@ class BillingClientManager constructor(
     private val TAG = javaClass.simpleName
     lateinit var product: CBProduct
     private var offerToken: String? = null
+    private var customerID: String? = null
 
     init {
         mContext = context
         this.skuList = skuList
-        this.skuType =skuType
         this.callBack = callBack
         startBillingServiceConnection()
-
     }
 
     /* Called to notify that the connection to the billing service was lost*/
@@ -56,7 +55,7 @@ class BillingClientManager constructor(
                     TAG,
                     "Google Billing Setup Done!"
                 )
-               // queryProductDetailsFromGooglePlay()
+                loadProductDetails(setOf(CBPurchase.ProductType.SUBS, CBPurchase.ProductType.INAPP))
             }
             BillingClient.BillingResponseCode.FEATURE_NOT_SUPPORTED,
             BillingClient.BillingResponseCode.BILLING_UNAVAILABLE -> {
@@ -109,13 +108,13 @@ class BillingClientManager constructor(
         }
     }
 
-    private fun buildQueryProductDetailsParams(): QueryProductDetailsParams {
+    private fun buildQueryProductDetailsParams(productType: String): QueryProductDetailsParams {
         val productList = mutableListOf<QueryProductDetailsParams.Product>()
         for (product in skuList) {
             productList.add(
                 QueryProductDetailsParams.Product.newBuilder()
                     .setProductId(product)
-                    .setProductType(BillingClient.ProductType.SUBS)
+                    .setProductType(productType)
                     .build()
             )
         }
@@ -124,107 +123,83 @@ class BillingClientManager constructor(
             .build()
     }
 
-    /* Get the Product Details from Play Console */
-    fun queryProductDetailsFromGooglePlay() {
+    private fun getProductDetails(types: Set<CBPurchase.ProductType>, callBack: CBCallback.ProductsCallback<List<CBProduct>>) {
         try {
-            val productDetailsParams = buildQueryProductDetailsParams()
-            billingClient.queryProductDetailsAsync(productDetailsParams){
-                    billingResult, productDetailsList ->
-                if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                    try {
-                        skusWithSkuDetails.clear()
-                        for (skuProduct in productDetailsList) {
-                            val length = skuProduct.subscriptionOfferDetails?.size!!-1
-                            Log.i(TAG, "length $length" )
-                            for (i in 0..length){
-                                val priceSize = skuProduct.subscriptionOfferDetails?.get(i)?.pricingPhases?.pricingPhaseList?.size
-                                if (priceSize == 1) {
-                                    val price = skuProduct.subscriptionOfferDetails?.get(i)?.pricingPhases?.pricingPhaseList?.first()?.formattedPrice
-                                    offerToken = skuProduct.subscriptionOfferDetails?.get(i)?.offerToken
-                                    //if (price !=null && price.isNotEmpty()) {
-                                    val product = price?.let {
-                                        CBProduct(
-                                            skuProduct.productId,
-                                            skuProduct.title,
-                                            it,
-                                            skuProduct,
-                                            false,
-                                            offerToken
-                                        )
-                                    }
-                                    if (product != null) {
-                                        skusWithSkuDetails.add(product)
-                                    }
-                                    // }
-                                }else{
-                                    Log.i(TAG, "Base plan price is empty" )
-                                }
-
+            val productTypes = types.toMutableSet()
+            val type = productTypes.firstOrNull()?.also { productTypes.remove(it) }
+            type?.let {
+                billingClient.queryProductDetailsAsync(buildQueryProductDetailsParams(it.value)) { billingResult, productDetailsList ->
+                    if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                        try {
+                            val storeProducts = productDetailsList.toCBProducts()
+                            skusWithSkuDetails.addAll(storeProducts)
+                            loadProductDetails(productTypes)
+                            if (productTypes.size ==0){
+                                callBack.onSuccess(productDetails = skusWithSkuDetails)
                             }
+                        } catch (ex: CBException) {
+                            callBack.onError(CBException(ErrorDetail(GPErrorCode.UnknownError.errorMsg)))
                         }
-                        Log.i(TAG, "Product details :$skusWithSkuDetails")
-                        callBack.onSuccess(productIDs = skusWithSkuDetails)
-                    }catch (ex: CBException){
-                        Log.e(TAG, "exception :" + ex.message)
-                        callBack.onError(CBException(ErrorDetail(GPErrorCode.UnknownError.errorMsg)))
+                    } else {
+                        callBack.onError(CBException(ErrorDetail("Service Unavailable")))
                     }
-                }else{
-                    Log.e(TAG, "Response Code :" + billingResult.responseCode)
-                    callBack.onError(CBException(ErrorDetail("Service Unavailable")))
-                }
 
+                }
             }
         }catch (exp: Exception){
-            Log.e(TAG, "Exception in queryProductDetailsFromGooglePlay()  :${exp.message}")
             callBack.onError(CBException(ErrorDetail("${exp.message}")))
         }
     }
 
-    /* Get the SKU/Products from Play Console */
-    private fun loadProductDetails(
-        @BillingClient.SkuType skuType: String,
-        skuList: ArrayList<String>, callBack: CBCallback.ListProductsCallback<ArrayList<CBProduct>>
-    ) {
-       try {
-           val params = SkuDetailsParams
-               .newBuilder()
-               .setSkusList(skuList)
-               .setType(skuType)
-               .build()
+    /* Get the Product Details from Play Console */
+    private fun loadProductDetails(types: Set<CBPurchase.ProductType>) {
+        getProductDetails(types, object : CBCallback.ProductsCallback<List<CBProduct>> {
+            override fun onSuccess(productDetails: List<CBProduct>) {
+                callBack.onSuccess(skusWithSkuDetails)
+            }
+            override fun onError(error: CBException) {
+                callBack.onError(error)
+            }
 
-           billingClient.querySkuDetailsAsync(
-               params
-           ) { billingResult, skuDetailsList ->
-               if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && skuDetailsList != null) {
-                   try {
-                       skusWithSkuDetails.clear()
-                       for (skuProduct in skuDetailsList) {
-                           val product = CBProduct(
-                               skuProduct.sku,
-                               skuProduct.title,
-                               skuProduct.price,
-                               skuProduct,
-                               false
-                           )
-                           skusWithSkuDetails.add(product)
-                       }
-                       Log.i(TAG, "Product details :$skusWithSkuDetails")
-                       callBack.onSuccess(productIDs = skusWithSkuDetails)
-                   }catch (ex: CBException){
-                       callBack.onError(CBException(ErrorDetail(message = "Error while parsing data", httpStatusCode = billingResult.responseCode)))
-                       Log.e(TAG, "exception :" + ex.message)
-                   }
-               }else{
-                   Log.e(TAG, "Response Code :" + billingResult.responseCode)
-                   callBack.onError(CBException(ErrorDetail(message = GPErrorCode.PlayServiceUnavailable.errorMsg, httpStatusCode = billingResult.responseCode)))
-               }
-           }
-       }catch (exp: CBException){
-           Log.e(TAG, "exception :$exp.message")
-           callBack.onError(CBException(ErrorDetail(message = "${exp.message}")))
-       }
-
+        })
     }
+    private fun buildBillingFlowParams(purchaseParams: CBPurchaseParams, billingParams: (BillingFlowParams) -> Unit)  {
+        val productDetailsParamsList = listOf(
+            purchaseParams.productDetails?.let { it ->
+                BillingFlowParams.ProductDetailsParams.newBuilder()
+                    .setProductDetails(it)
+                    .setOfferToken(purchaseParams.offerToken)
+                    .build()
+            }
+        )
+        billingParams(BillingFlowParams.newBuilder()
+            .setProductDetailsParamsList(productDetailsParamsList).build())
+    }
+
+    /* Purchase the product: Initiates the billing flow for an In-app-purchase  */
+    fun purchaseProduct(
+        purchaseParams: CBPurchaseParams?,
+        customerID: String = "",
+        purchaseCallBack: CBCallback.PurchaseCallback<String>
+    ) {
+        this.purchaseCallBack = purchaseCallBack
+        if (!(TextUtils.isEmpty(customerID))) {
+            this.customerID = customerID
+        }
+
+        Log.i(TAG, "offerToken : ${purchaseParams?.offerToken} ")
+
+        if (purchaseParams != null) {
+            buildBillingFlowParams(purchaseParams){
+                billingClient.launchBillingFlow(mContext as Activity, it)
+                    .takeIf { billingResult -> billingResult.responseCode != BillingClient.BillingResponseCode.OK
+                    }?.let { billingResult ->
+                        Log.e(TAG, "Failed to launch billing flow $billingResult")
+                    }
+            }
+        }
+    }
+
 
     /* Purchase the product: Initiates the billing flow for an In-app-purchase  */
     fun purchase(
@@ -233,66 +208,39 @@ class BillingClientManager constructor(
         purchaseCallBack: CBCallback.PurchaseCallback<String>
     ) {
         this.purchaseCallBack = purchaseCallBack
-        this.product = product
-//        try {
-//            if (product.productDetails.subscriptionOfferDetails != null && product.productDetails.subscriptionOfferDetails!!.size > 0) {
-//                val offerDetails: LinkedTreeMap<String, String> = product.productDetails.subscriptionOfferDetails!![0] as LinkedTreeMap<String, String>
-//                offerToken = offerDetails.get("offerToken") as String
-//            }
-//        }catch (e: Exception){
-//            Log.i(TAG, "Exception : ${e.stackTrace} ")
-//            purchaseCallBack.onError(CBException(ErrorDetail(GPErrorCode.UnknownError.errorMsg)))
-//        }
-
-
         if (!(TextUtils.isEmpty(customerID))) {
             this.customerID = customerID
         }
-        offerToken = product.offerToken
+        Log.i(TAG, "offerToken : ${product.subscriptionOffers.firstOrNull()?.purchaseParams?.offerToken} ")
 
-        Log.i(TAG, "offerToken : ${product.productDetails} ")
-
-
-        val productDetailsParamsList = listOf(
-            offerToken?.let {
-                BillingFlowParams.ProductDetailsParams.newBuilder()
-                    .setProductDetails(product.productDetails)
-                    .setOfferToken(it)
-                    .build()
+        val purchaseParams = product.subscriptionOffers.firstOrNull()?.purchaseParams
+        if (purchaseParams != null) {
+            buildBillingFlowParams(purchaseParams){
+                billingClient.launchBillingFlow(mContext as Activity, it)
+                    .takeIf { billingResult -> billingResult.responseCode != BillingClient.BillingResponseCode.OK
+                    }?.let { billingResult ->
+                        Log.e(TAG, "Failed to launch billing flow $billingResult")
+                    }
             }
-        )
+        }
 
-        val billingFlowParams = BillingFlowParams.newBuilder()
-            .setProductDetailsParamsList(productDetailsParamsList).build()
-
-        billingClient.launchBillingFlow(mContext as Activity, billingFlowParams)
-            .takeIf { billingResult -> billingResult.responseCode != BillingClient.BillingResponseCode.OK
-            }?.let { billingResult ->
-                Log.e(TAG, "Failed to launch billing flow $billingResult")
-            }
-
-    }
-
-
-    /* Purchase the product: Initiates the billing flow for an In-app-purchase  */
-    fun purchase(
-        product: CBProduct,
-        purchaseCallBack: CBCallback.PurchaseCallback<String>
-    ) {
-        this.purchaseCallBack = purchaseCallBack
-        this.product = product
-        val skuDetails = product.skuDetails
-
-        val params = BillingFlowParams.newBuilder()
-            .setSkuDetails(skuDetails)
-            .build()
-
-        billingClient.launchBillingFlow(mContext as Activity, params)
-            .takeIf { billingResult -> billingResult.responseCode != BillingClient.BillingResponseCode.OK
-            }?.let { billingResult ->
-                Log.e(TAG, "Failed to launch billing flow $billingResult")
-                purchaseCallBack.onError(CBException(ErrorDetail(message = GPErrorCode.LaunchBillingFlowError.errorMsg, httpStatusCode = billingResult.responseCode)))
-            }
+//        val productDetailsParamsList = listOf(
+//            purchaseParams?.productDetails?.let { it ->
+//                BillingFlowParams.ProductDetailsParams.newBuilder()
+//                    .setProductDetails(it)
+//                    .setOfferToken(purchaseParams.offerToken)
+//                    .build()
+//            }
+//        )
+//
+//        val billingFlowParams = BillingFlowParams.newBuilder()
+//            .setProductDetailsParamsList(productDetailsParamsList).build()
+//
+//        billingClient.launchBillingFlow(mContext as Activity, billingFlowParams)
+//            .takeIf { billingResult -> billingResult.responseCode != BillingClient.BillingResponseCode.OK
+//            }?.let { billingResult ->
+//                Log.e(TAG, "Failed to launch billing flow $billingResult")
+//            }
 
     }
 
@@ -473,4 +421,24 @@ class BillingClientManager constructor(
             }
         }
     }
+    companion object {
+        @JvmSynthetic
+        internal var backingFieldSharedInstance: BillingClientManager? = null
+
+        /**
+         * Singleton instance of Purchases. [configure] will set this
+         * @return A previously set singleton Purchases instance
+         * @throws UninitializedPropertyAccessException if the shared instance has not been configured.
+         */
+        @JvmStatic
+        var sharedInstance: BillingClientManager
+            get() =
+                backingFieldSharedInstance
+                    ?: throw UninitializedPropertyAccessException("InstanceIssue")
+            internal set(value) {
+                backingFieldSharedInstance?.billingClient?.endConnection()
+                backingFieldSharedInstance = value
+            }
+    }
+
 }

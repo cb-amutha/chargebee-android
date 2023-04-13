@@ -22,7 +22,7 @@
         <activity android:name=".items.ItemActivity"/>
         <activity android:name=".plan.PlansActivity"/>
         <activity android:name=".subscription.SubscriptionActivity"/>
-        <activity android:name="com.chargebee.example.MainActivity">
+        <activity android:name="com.chargebee.example.MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

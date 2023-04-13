@@ -17,5 +17,9 @@ interface CBCallback {
         fun onSuccess(result: ReceiptDetail, status: Boolean)
         fun onError(error: CBException)
     }
+    interface ProductsCallback<T> {
+        fun onSuccess(productDetails: List<CBProduct>)
+        fun onError(error: CBException)
+    }
 
 }
